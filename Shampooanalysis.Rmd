@@ -1,0 +1,206 @@
+---
+title: "Shampoo analysis"
+output: html_notebook
+---
+
+
+
+```{r}
+screwcap <- read.csv('ScrewCaps.csv')
+hist(screwcap$Price)
+```
+
+2. Density of Price variable in screw cap dataset:
+We get a normal distribution with mean around 15
+```{r}
+install.packages('sm')
+library(sm)
+sm.density(screwcap$Price)
+```
+Yes, Price depends on Lenght and Weight (correlation 0.8)
+
+```{r}
+cor(screwcap$Price, screwcap$Length,  method = "pearson", use = "complete.obs")
+cor(screwcap$Price, screwcap$weight,  method = "pearson", use = "complete.obs")
+cor(screwcap$Price, screwcap$Impermeability,  method = "pearson", use = "complete.obs")
+cor(screwcap$Price, screwcap$Shape,  method = "pearson", use = "complete.obs")
+```
+
+Does the Price depend on Impermability? Shape?
+Can't tell because impermeability and shape are categorical?
+```{r}
+model.lm <- lm(Price ~ Impermeability, data = screwcap)
+summary(model.lm)
+```
+Less expensive supplier:
+Supplier B, with price of 6.48
+```{r}
+min(screwcap$Price)
+which.min(screwcap$Price)
+```
+
+```{r}
+rownames(screwcap)[which.min(apply(screwcap,MARGIN=1,min))]
+```
+
+3. Finding outliers in Mature.Volume and other variables
+Method 1 : using boxplot
+Outliers are the values of Mature Volume that are above 300,000; Prices above 30; Lengths above 15
+```{r}
+OutVals = boxplot(screwcap$Mature.Volume)$out
+which(screwcap$Mature.Volume %in% OutVals)
+OutVals = boxplot(screwcap$Price)$out
+which(screwcap$Price %in% OutVals)
+OutVals = boxplot(screwcap$Length)$out
+which(screwcap$Length %in% OutVals)
+```
+method 2 for outliers using dixon test:
+```{r}
+install.packages('outliers')
+library(outliers)
+#Dixon Tests for Outliers for y
+dixon.test(screwcap$Mature.Volume,opposite = FALSE)
+```
+
+```{r}
+summary(screwcap$Mature.Volume)[["1st Qu."]]
+summary(screwcap$Mature.Volume)[["3rd Qu."]]
+outlier_values <- boxplot.stats(screwcap$Mature.Volume)$out
+
+```
+4. PCA on the dataset Screwcap:
+Aim:reduce the correlation between variables such as Length and Weight
+
+```{r}
+library(FactoMineR)
+respca <- PCA(screwcap, quanti.sup = c(1,11), quali.sup = c(2,6,7,8,10), scale = T)
+respca2 <- PCA(screwcap, quanti.sup = c(1,11), quali.sup = c(2,6,7,8,10), ncp=3)
+summary(res.pca2)
+```
+8.
+9. reduce noise
+
+```{r}
+respca$var$coord[,1:2]
+summary(respca)
+```
+
+
+Convert categorical variables to numerical variables?
+```{r}
+names <- c('Shape' ,'Finishing')
+screwcap[,names] <- lapply(screwcap[,names] , factor)
+str(screwcap)
+
+cor(screwcap$Price, screwcap$Shape,  method = "pearson", use = "complete.obs")
+
+```
+```{r}
+install.packages('psych')
+library('psych')
+corr.test(respca[1:8], use = use, method = method)
+cor(respca, method = "pearson", use = "complete.obs")
+```
+5. Compute correlation matrix between the variables
+
+```{r}
+cdata <- screwcap
+cdata[,c(3,4, 5 ,9,11,12)] <- lapply(X = cdata[,c(3,4,5,9,11,12)], FUN = scale, center = TRUE)
+M=as.matrix(cdata[,c(3, 4, 5, 9, 11,12)])
+n <- nrow(M)
+H <- diag(rep(1,n)) - (1/n)*rep(1,n) %*% t(rep(1,n))
+S <- (1/n) * t(M) %*% H %*% M
+```
+6. PCA focuses on correlation between variables. It's a problem if the PCA hasn't beeen scaled?
+
+7. 62% of the data (inertia) can be explained by dimension 1, itself correlated with price etc. Dimension 1 represents 62% of the variance of the dataset.
+
+8. Price and Length are the principal, synthetic variables the most correlated with the other variables
+
+9. We would keep k=2 as the number of clusters? (need to study the variation in inertia between dimensions)
+
+10.Perfom a kmeans algorithm on the selected k principal components of PCA. How many cluster are you keeping? Justify.
+We keep 2 clusters, since the inertia loss is high going from cluster 1 to 2 and to 2 to 3 but not after 3.
+We can see from the plot that the between-class inertia is maximised when we have 2 clusters
+
+```{r}
+library(FactoMineR)
+library(NbClust)
+
+screwcapomit <- na.omit(screwcap)
+set.seed(20)
+
+res.kmeans <- kmeans(screwcapomit[, 11:12], 2, nstart = 20)  
+plot(screwcapomit[11:12], col =(res.kmeans$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
+#res.kmeans <- kmeans(screwcapomit[, 11:12], 3, nstart = 20)  
+#plot(screwcapomit[11:12], col =(res.kmeans$cluster +1) , main="K-Means result with 3 clusters", pch=20, cex=2)
+```
+
+11. AHC clustering: (prendre -1 pour nombre idéal de cluster)
+choiist cluster qui a des variables pas dans les autres
+10% des obersvations du cluster sont liésà supplier C
+100% des suppliers c sont de le cluster
+```{r}
+library(FactoMineR)
+resHCPC <- HCPC(respca, nb.clust = -1)
+resHCPC$desc.var
+
+```
+#between-inertia to total interita ratio close to 1, added
+
+12. High within-intertia in cluster number 1?
+13. k-1: we lose info. K+1 not much more inertia
+meme clusters avec HCPC utilisant toutes les varibales numériques que sur drésultants du PCA
+
+```{r}
+res.kmeanstotal <- kmeans(screwcapomit[,3:4], 2, nstart = 20)
+plot(screwcapomit[3:4], col =(res.kmeanstotal$cluster +1) , main="K-Means result with 2 clusters", pch=20, cex=2)
+```
+```{r}
+install.packages('cluster')
+library(cluster)
+res.kmeanstotal <- kmeans(res.pca2$ind$coord, 4, nstart = 100)
+clusplot(screwcap, res.kmeanstotal$cluster, main='2D representation of the Cluster solution',
+         color=TRUE, shade=TRUE,
+         labels=2, lines=0)
+```
+
+13. We did a PCA to identify which were the relevant main components to use. Since the other variables (weight and diameter) are highly correlated, we don't need to include these as part of the k-means.
+
+14. ? Gives the occurences for each variable relative to the supplier (ex: supplier a has 74 cases of type 1 impermeability?)
+
+38% des observations du cluster 1 corresopndent au shape 2
+shape 2 est présent 26% des fois dans cluster 1
+nb of pieces est surrpretné dans cluster3
+
+```{r}
+catdes(screwcap,2, proba = 0.05, row.w= NULL)
+```
+
+15.
+```{r}
+library(FactoMineR)
+screwcapnew = screwcap[, c(6,7)]
+head(screwcapnew)
+res.mca1 = MCA(screwcapnew, graph = FALSE)
+
+plot.MCA(res.mca1, cex=0.7)
+```
+
+15. plus de varables à éxpliquer, diminution d'inertie pour varbiabl1
+
+```{r}
+?FAMD
+data("geomorphology")
+summary("geomorpohology")
+resfamd <- FAMD(geomorphology)
+summary(resfamd)
+```
+
+
+```{r}
+resfamd1 <- FAMD(screwcap)
+summary(res.famd1)
+resfamdHCPC <- HCPC(resfamd1, nb.clust = -1)
+```
+
